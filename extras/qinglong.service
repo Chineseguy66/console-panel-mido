@@ -1,0 +1,21 @@
+[Unit]
+Description=QingLong panel
+After=network.target nginx.service
+Wants=nginx.service
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=600
+Restart=on-failure
+RestartSec=30
+Environment=QL_DIR=/usr/local/lib/node_modules/@whyour/qinglong
+Environment=QL_DATA_DIR=/opt/ql/data
+WorkingDirectory=/usr/local/lib/node_modules/@whyour/qinglong
+ExecStart=/usr/local/bin/qinglong-boot
+ExecStop=-/usr/local/bin/pm2 delete all
+
+[Install]
+WantedBy=multi-user.target

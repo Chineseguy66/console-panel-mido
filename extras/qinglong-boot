@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# ============================================================================
+# qinglong-boot —— 青龙开机启动包装器
+#
+# 背景：/usr/local/bin/qinglong 是 QL 官方 start.sh 的软链，不带参数时会执行
+#       “完整初始化”：apt-get update + apt-get install(11 个包) +
+#       npm install -g pnpm pm2 ts-node typescript + pip3 install requests。
+#       实测每次开机因此耗时 ~40 秒，且反复写入 eMMC。
+#
+# 本包装器逻辑：
+#   1) 依赖已就绪（marker + node_modules + pm2 都在）→ 调用 QL 自带的
+#      `qinglong reload`，只做「配置导入 / nginx reload / pm2 拉起应用」，约 3~5 秒；
+#   2) 否则 → 回退到官方完整初始化，成功后打 marker。
+#
+# marker: $QL_DIR/.deps-installed （npm 升级 QL 后被清掉是预期行为，会重新完整初始化）
+#
+# 回滚：把 qinglong.service 的 ExecStart 改回 /bin/bash /usr/local/bin/qinglong
+# ============================================================================
+
+QL_DIR=/usr/local/lib/node_modules/@whyour/qinglong
+QL_DATA_DIR=/opt/ql/data
+MARKER="$QL_DIR/.deps-installed"
+export QL_DIR QL_DATA_DIR
+
+PM2_BIN=$(command -v pm2 2>/dev/null || true)
+[ -x "$PM2_BIN" ] || PM2_BIN=/usr/local/bin/pm2
+
+echo "===== qinglong-boot $(date '+%F %T') ====="
+
+if [ -f "$MARKER" ] && [ -d "$QL_DIR/node_modules" ] && [ -x "$PM2_BIN" ]; then
+  echo "-- 快路径：依赖已就绪，执行 qinglong reload --"
+  if /bin/bash /usr/local/bin/qinglong reload; then
+    "$PM2_BIN" save >/dev/null 2>&1 || true
+    echo "-- 快路径完成 --"
+    exit 0
+  fi
+  echo "-- 快路径失败（rc=$?），回退完整初始化 --"
+fi
+
+echo "-- 完整初始化 --"
+/bin/bash /usr/local/bin/qinglong
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  touch "$MARKER"
+  echo "-- 初始化完成，已写 marker --"
+else
+  echo "-- 初始化失败 rc=$rc --"
+fi
+exit "$rc"
