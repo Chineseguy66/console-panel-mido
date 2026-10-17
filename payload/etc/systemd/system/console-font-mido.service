@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply mido 30x40 CJK console font on tty1
+After=console-setup.service
+Before=battery-panel.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/setfont -C /dev/tty1 /usr/local/share/consolefonts/mido-30x40.psf
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Screen idle blank/wake for mido
+After=multi-user.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/screen-idle.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

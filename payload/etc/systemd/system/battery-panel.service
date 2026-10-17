@@ -1,0 +1,10 @@
+[Unit]
+Description=Battery status panel on tty1
+After=multi-user.target
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/battery-panel.sh /dev/tty1
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
