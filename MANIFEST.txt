@@ -1,0 +1,72 @@
+==============================================================================
+  mido 屏幕看板 · 迁移备份包  ——  文件清单
+  版本 v1.0   打包日期 2026-10-17   来源机型 红米 Note 4X (msm8953 / xiaomi-mido)
+  目标系统 Debian 12/13 arm64       控制台 1080x1920 (36 列 x 48 行)
+==============================================================================
+
+【一】安装负载 payload/ —— 目录结构就是系统绝对路径的镜像
+      install.sh 会把这里的内容按下面的映射拷到系统对应位置。
+
+包内路径                                                         字节  安装到 / 用途
+------------------------------------------------------------------------------
+etc/default/console-setup                                   285  控制台字体前提：FONTFACE=mido / FONTSIZE=40x30
+                                                                 → /etc/default/console-setup
+etc/systemd/system/battery-panel.service                    211  看板主服务
+                                                                 → /etc/systemd/system/battery-panel.service
+etc/systemd/system/console-font-mido.service                283  开机给 tty1 套 30x40 字体
+                                                                 → /etc/systemd/system/console-font-mido.service
+etc/systemd/system/screen-idle.service                      219  息屏守护服务
+                                                                 → /etc/systemd/system/screen-idle.service
+usr/local/bin/battery-panel.sh                            47758  看板脚本（预编译版，systemd 实际执行）
+                                                                 → /usr/local/bin/battery-panel.sh
+usr/local/bin/screen-idle.py                               3634  息屏守护（空闲关背光 / 按键唤醒）
+                                                                 → /usr/local/bin/screen-idle.py
+usr/local/share/consolefonts/mido-30x40.psf               83804  PSF2 控制台点阵字体 30x40（512 字形，含中文）
+                                                                 → /usr/local/share/consolefonts/mido-30x40.psf
+usr/local/share/consolefonts/pua.sed                       1344  汉字→PUA 码位映射表（重建字体时用）
+                                                                 → /usr/local/share/consolefonts/pua.sed
+usr/share/consolefonts/Uni2-mido40x30.psf.gz              26818  同一字体的 gz 版（给 console-setup 用）
+                                                                 → /usr/share/consolefonts/Uni2-mido40x30.psf.gz
+
+【二】脚本与文档
+
+包内路径                                                         字节  用途
+------------------------------------------------------------------------------
+README.md                                                 21689  说明书：怎么用 + 注意事项
+docs/images/屏幕看板-参考效果.png                                 46181  文档 / 参考图
+extras/qinglong-boot                                       1907  可选件
+extras/qinglong.service                                     510  可选件
+install.sh                                                22381  一键恢复脚本（★ 主要入口）
+source/battery-panel.src.sh                               46925  源码 / 构建工具
+source/build.sh                                            1352  源码 / 构建工具
+source/deploy.py                                           5029  源码 / 构建工具
+source/mkfont.py                                          25353  源码 / 构建工具
+source/mock.sh                                             7558  源码 / 构建工具
+source/term.py                                            10774  源码 / 构建工具
+uninstall.sh                                               3744  卸载 / 回滚脚本
+
+------------------------------------------------------------------------------
+文件总数：21    总字节：357759
+
+【三】校验方法
+
+  # 在包目录下执行（Linux / macOS）
+  sha256sum -c MANIFEST.sha256
+
+  # Windows PowerShell
+  Get-Content MANIFEST.sha256 | ForEach-Object {
+    $h,$f = $_ -split '  ',2; if ((Get-FileHash $f -Algorithm SHA256).Hash
+      -ne $h.ToUpper()) { "MISMATCH: $f" } }; "done"
+
+【四】有执行位的文件
+
+  extras/qinglong-boot
+  install.sh
+  payload/usr/local/bin/battery-panel.sh
+  payload/usr/local/bin/screen-idle.py
+  source/build.sh
+  source/mock.sh
+  uninstall.sh
+  （从 Windows 拷到 Linux 后若丢失执行位：chmod +x <上面的文件>）
+
+==============================================================================
