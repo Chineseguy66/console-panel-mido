@@ -234,7 +234,10 @@ else
   done
   chmod 755 "$D_PANEL" "$D_IDLE"
   chmod 644 "$D_FONT" "$D_PUASED" "$D_GZFONT" "$D_CS"
-  chmod 644 "$D_UNITDIR"/*.service
+  # 只改本项目这三个单元，绝不 glob 整个 /etc/systemd/system
+  for u in $UNITS; do
+    chmod 644 "$D_UNITDIR/$u"
+  done
   # 附一份可读源码，方便以后改（不执行）
   cp -a "$SELF/source/battery-panel.src.sh" "$D_SRC" 2>/dev/null || true
   chmod 755 "$D_SRC" 2>/dev/null || true

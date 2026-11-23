@@ -1,10 +1,19 @@
 [Unit]
 Description=Screen idle blank/wake for mido
 After=multi-user.target
+# 兜底：60 秒内最多启动 3 次，真出问题也不会无限重启
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/screen-idle.py
-Restart=always
+# on-failure 而不是 always：
+#   没装 python3-evdev 时脚本会打印提示并以 0 正常退出，
+#   用 always 会把它变成「崩溃→重启→再崩溃」的死循环；
+#   on-failure 只在真异常（非 0 退出/被杀）时重启。
+Restart=on-failure
 RestartSec=5
+
 [Install]
 WantedBy=multi-user.target

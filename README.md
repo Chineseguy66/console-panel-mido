@@ -139,7 +139,7 @@ sudo ./uninstall.sh
 | 包 | 影响 |
 |---|---|
 | `console-setup` | tty1~tty6 统一字体；缺了则只有 tty1 有字体 |
-| `python3-evdev` | 息屏守护读按键的能力；缺了只能定时息屏、无法按键唤醒 |
+| `python3-evdev` | 息屏守护读按键的能力；缺了守护会打印提示并正常退出（不崩溃、不无限重启），屏幕保持常亮 |
 | `procps` | `uptime`；缺了「运行时长」栏显示异常 |
 | `tailscale` | 「内网穿透」栏有数据；缺了显示「未启用」（正常降级） |
 
@@ -193,17 +193,20 @@ sudo ./uninstall.sh
 **要改内容，改 `source/battery-panel.src.sh`（可读源码），然后重建：**
 
 ```bash
-# 前提：Windows（需要 consola.ttf 与 msyh.ttc）+ Python3 + Pillow
+# 前提：Linux / macOS / Windows 均可；Python3 + Pillow + 开源字体
+# Debian/Ubuntu: sudo apt install python3-pil fonts-dejavu-core fonts-wqy-zenhei
 cd source
-python -m pip install pillow
-bash build.sh                 # 生成字体 + 预编译脚本 + 本地自检预览
+python3 -m pip install pillow
+bash build.sh                 # 自动探测 python 与源码文件名，生成字体 + 预编译脚本 + 本地自检预览
 # 预览图：../preview/preview_latest.png，先在这里确认视觉正确
+# 也可用 PY=/path/to/python3、SRC=xxx.sh、PANEL_FONT_MONO/PANEL_FONT_CJK 覆盖默认值
 ```
 
 `build.sh` 会重新生成 `mido-30x40.psf`、`Uni2-mido40x30.psf.gz`、`pua.sed` 和预编译版脚本。
-**注意**：新增汉字可以（会自动进字体），但**新增字形会占用字体槽位** ——
-字体已用 512 个字形，如果新字符超出容量，`mkfont.py` 会把尺寸升级到需要更大字形数的版本
-（观察生成后的「字形数」）；极端情况下会顶到 PSF 上限。原来是刻意控制在 512 以内的。
+**字体只用开源字体**：等宽用 DejaVu Sans Mono（Bitstream Vera 许可），中文用文泉驿正黑
+（GPLv2+，带字体嵌入例外）或 Noto Sans CJK（OFL）；不再依赖 Consolas / 微软雅黑。
+**注意**：字体固定为 512 个槽位（fbcon 的限制），新增汉字可以，但总字形数超出 512 时
+`mkfont.py` 会从尾部截断并给出提示，需要自己精简文案或调整 `COMMON_CJK` 字表。
 
 **在电脑上不接手机也能预览**（推荐先这样验证）：
 

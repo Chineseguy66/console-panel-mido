@@ -4,12 +4,21 @@ screen-idle.py —— 红米 mido Debian 息屏守护
 - 空闲 120 秒自动关背光 (brightness=0)
 - 按音量键/电源键/触摸唤醒 (brightness=2048)
 - 只关背光，不关机
+
+python3-evdev 属于可选依赖：没装时脚本会打印安装提示并以 0 正常退出，
+不会抛 ImportError 崩溃（服务单元是 Restart=on-failure，退出码 0 不会拉起）。
 """
 import threading
 import time
 import os
 import select
-from evdev import InputDevice, list_devices, ecodes
+
+try:
+    from evdev import InputDevice, list_devices, ecodes
+    HAVE_EVDEV = True
+except ImportError:
+    HAVE_EVDEV = False
+    InputDevice = list_devices = ecodes = None
 
 BACKLIGHT = "/sys/class/backlight/backlight/brightness"
 BRIGHT_ON = 2048   # 亮屏亮度
@@ -21,8 +30,9 @@ POLL = 1.0         # 检查周期(秒)
 WATCH_NAMES = ("gpio-keys", "pm8941_pwrkey", "pm8941_resin", "ft5x06")
 
 # 需要唤醒的按键：音量+/音量-/电源/触摸
-WAKE_CODES = {ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN,
-              ecodes.KEY_POWER, ecodes.BTN_TOUCH}
+# （evdev 没装时 ecodes 为 None，这里必须留空集合，避免 import 阶段就 NameError）
+WAKE_CODES = ({ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN,
+               ecodes.KEY_POWER, ecodes.BTN_TOUCH} if HAVE_EVDEV else set())
 
 def set_bright(v):
     try:
@@ -51,6 +61,12 @@ def open_devices():
     return devs
 
 def main():
+    if not HAVE_EVDEV:
+        print("python3-evdev 未安装：息屏守护不启动，屏幕保持常亮。\n"
+              "安装后重启服务即可启用：apt install python3-evdev && "
+              "systemctl restart screen-idle", flush=True)
+        return 0
+
     last_activity = time.time()
     screen_on = True
     devs = open_devices()

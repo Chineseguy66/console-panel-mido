@@ -3,14 +3,27 @@
 
 用法:
     python mkfont.py <源文本文件> <输出目录> [--runtime <源脚本> <输出脚本>]
+                     [--font-mono <等宽字体>] [--font-cjk <中文字体>]
 
-字体策略:
-    - ASCII(0x20-0x7E) 用 Consolas（等宽，数字对齐好看），按格子高度定字号
-    - 中文/全角     用 微软雅黑，按格子宽度定字号后纵向拉伸填满格子
+字体策略（**只用开源字体**）:
+    - ASCII(0x20-0x7E) 用 DejaVu Sans Mono（Bitstream Vera 许可），按格子高度定字号
+    - 中文/全角     用 文泉驿正黑 / Noto Sans CJK，按格子宽度定字号后纵向拉伸填满格子
     - 制表符(┌─┐│└┘├┤)  程序化绘制，保证 36 格拼起来完全无缝
-    - 图形符号(●○◆▲✓) 用微软雅黑居中绘制，不拉伸（保持正圆/正方）
+    - 图形符号(●○◆▲✓) 用中文字体居中绘制，不拉伸（保持正圆/正方）
     - █(U+2588) / ░(U+2591) 程序化绘制，保证进度条锐利
+
+为什么不用 Consolas / 微软雅黑：两者都是微软专有字体，把它们渲染出的点阵字体
+随源码分发有版权风险（上游 review 明确指出）。现在的两个替代品都可自由分发：
+    DejaVu Sans Mono —— Bitstream Vera / DejaVu 许可
+    文泉驿正黑      —— GPLv2+，带字体嵌入例外（font embedding exception）
+    Noto Sans CJK   —— SIL Open Font License 1.1
+
+字体来源（任选其一，或自己装好后用 --font-mono/--font-cjk 指定路径）：
+    Debian/Ubuntu: sudo apt install fonts-dejavu-core fonts-wqy-zenhei
+    Fedora:        sudo dnf install dejavu-sans-mono-fonts wqy-zenhei-fonts
+    也可把字体放到本文件同级的 fonts/ 目录（DejaVuSansMono.ttf / wqy-zenhei.ttc）
 """
+import json
 import math
 import os
 import struct
@@ -19,8 +32,73 @@ import unicodedata
 
 from PIL import Image, ImageDraw, ImageFont
 
-CODE_FONT = r"C:\Windows\Fonts\consola.ttf"
-CJK_FONT = r"C:\Windows\Fonts\msyh.ttc"
+# ── 字体解析 ────────────────────────────────────────────────────────────────
+# 优先级：命令行参数 > 环境变量 > 工程内 fonts/ 副本 > 系统常见路径。
+# 找不到就**直接报错退出**，并打印安装提示 —— 绝不悄悄回退到微软字体。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_FONT_DIR = os.path.join(_HERE, "fonts")
+
+MONO_CANDIDATES = [
+    os.path.join(_FONT_DIR, "DejaVuSansMono.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
+    "/usr/share/fonts/noto/NotoSansMono-Regular.ttf",
+]
+
+CJK_CANDIDATES = [
+    os.path.join(_FONT_DIR, "wqy-zenhei.ttc"),
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+]
+
+
+def pick_font(candidates, kind, env, flag, override=""):
+    """返回一个可用的字体路径。
+
+    优先级：命令行参数 > 环境变量 > 候选路径列表。
+    ⚠ 必须把 override 放在**最前面判断**：早期版本在 import 阶段就调用了本函数，
+      结果「机器上一款都没有」时直接 SystemExit，用户按提示加 `--font-mono /path`
+      也救不回来 —— 因为参数还没解析。现在改成 main() 里解析完参数再解析字体。
+    """
+    if override:
+        if not os.path.isfile(override):
+            raise SystemExit("✗ %s 指定的字体不存在：%s" % (flag, override))
+        return override
+    custom = os.environ.get(env) or ""
+    if custom:
+        if not os.path.isfile(custom):
+            raise SystemExit("✗ %s=%s 指向的文件不存在" % (env, custom))
+        return custom
+    for p in candidates:
+        if p and os.path.isfile(p):
+            return p
+    pkg = "fonts-dejavu-core fonts-wqy-zenhei" if kind == "mono" else "fonts-wqy-zenhei"
+    raise SystemExit(
+        "✗ 没找到可用的%s字体（本项目只使用开源字体，不再使用 Consolas / 微软雅黑）。\n"
+        "  安装办法：sudo apt install %s\n"
+        "  或用参数指定：mkfont.py ... %s /path/to/font\n"
+        "  也可把字体放到 %s\n"
+        "  已尝试的路径：\n    %s"
+        % ("等宽" if kind == "mono" else "中文", pkg, flag, _FONT_DIR,
+           "\n    ".join(candidates)))
+
+
+# 由 resolve_fonts() 在解析完命令行参数后填（见文件末尾 main()）
+CODE_FONT = None
+CJK_FONT = None
+
+
+def resolve_fonts(mono="", cjk=""):
+    """解析两个字体路径并写入全局。任何一款都不可用就直接退出，不做静默回退。"""
+    global CODE_FONT, CJK_FONT
+    CODE_FONT = pick_font(MONO_CANDIDATES, "mono", "PANEL_FONT_MONO", "--font-mono", mono)
+    CJK_FONT = pick_font(CJK_CANDIDATES, "cjk", "PANEL_FONT_CJK", "--font-cjk", cjk)
+    return CODE_FONT, CJK_FONT
 
 # (宽, 高) —— 必须能整除 1080x1920，否则 console 会留黑边
 CANDIDATES = [(30, 40)]
@@ -375,6 +453,7 @@ def render_box(cp, W, H):
 
 
 def render(ch, W, H, ascii_size, cjk_size, adv, sym_size=None):
+    ensure_fonts()          # 见 ensure_fonts 的说明（term.py 不经过 main）
     cp = ord(ch)
     if cp == FULL_BLOCK:
         img = Image.new("1", (W, H), 0)
@@ -480,8 +559,21 @@ def to_psf2(imgs, codepoints, W, H):
     return bytes(out)
 
 
+def ensure_fonts():
+    """字体还没解析过就按默认优先级解析一次。
+
+    为什么需要它：字体解析被挪到了 main()（这样 `--font-mono` 才救得回
+    「本机一款开源字体都没有」的情况），但 term.py 是 `import mkfont` 后直接
+    调 metrics()/render() 的 —— 它不走 main()，全局字体就会是 None，
+    报一个 `'NoneType' object has no attribute 'read'` 的怪错。
+    """
+    if CODE_FONT is None or CJK_FONT is None:
+        resolve_fonts()
+
+
 def metrics(W, H):
     """算出该尺寸下的三个字号（ASCII / 汉字 / 图形符号）"""
+    ensure_fonts()
     probe = Image.new("L", (W, H), 0)
     pd = ImageDraw.Draw(probe)
     h_lim = fit_by_height(pd, "Wgj|", CODE_FONT, H - 1)
@@ -599,15 +691,63 @@ def main():
         i = args.index("--runtime")
         runtime = (args[i + 1], args[i + 2])
         del args[i:i + 3]
+
+    # --extra FILE：额外的字符来源（设置页的文案在 mido_ui.py 里，不在面板源码里）。
+    #   直接拼进来参与「选字」，这样 UI 用到的汉字也会有字形 + PUA 别名。
+    extra_text = ""
+    if "--extra" in args:
+        i = args.index("--extra")
+        p = args[i + 1]
+        del args[i:i + 2]
+        try:
+            with open(p, encoding="utf-8") as fh:
+                extra_text = fh.read()
+        except Exception as e:
+            print("✗ --extra 读不了 %s: %s" % (p, e))
+            return 2
+
+    # --map-json PATH：把 PUA 映射另存成 JSON，给 mido_ui.py 用
+    #   （面板走 sed，设置页是 Python，两边必须是同一份映射，否则会出现
+    #    「看板正常、设置页字体错位」这种两套字的事故）。
+    map_json = ""
+    if "--map-json" in args:
+        i = args.index("--map-json")
+        map_json = args[i + 1]
+        del args[i:i + 2]
+
+    # 字体可以在命令行覆盖（优先级最高），方便在别的机器上指定自己的开源字体。
+    # 注意顺序：先解析参数、再解析字体 —— 否则「本机一款开源字体都没有」时，
+    # 提示用户加 --font-mono 也没用（那时代码已经在 import 阶段退出了）。
+    global H_STRETCH
+    mono = cjk = ""
+    for flag in ("--font-mono", "--font-cjk"):
+        if flag in args:
+            i = args.index(flag)
+            path = args[i + 1]
+            del args[i:i + 2]
+            if not os.path.isfile(path):
+                print("✗ %s 指定的字体不存在: %s" % (flag, path))
+                return 2
+            if flag == "--font-mono":
+                mono = path
+            else:
+                cjk = path
+
+    m_font, c_font = resolve_fonts(mono, cjk)
+    print("等宽字体: %s" % m_font)
+    print("中文字体: %s" % c_font)
+
     src, outdir = args[0], args[1]
 
-    global H_STRETCH
     if len(args) > 2 and args[2] == "natural":
         H_STRETCH = False
 
     with open(src, "r", encoding="utf-8") as fh:
         raw = fh.read()
     text = code_only(raw)
+    if extra_text:
+        # 额外来源不做注释剔除（它是生成好的纯字表，不是源码）
+        text = text + "\n" + extra_text
     alias = collect_alias(text)
     chars = collect_chars(text, reserve=len(alias))
     print("需要生成的字形数: %d（其中 %d 个汉字额外带 PUA 别名）H_STRETCH=%s"
@@ -620,6 +760,13 @@ def main():
                             os.path.join(outdir, "mido-%dx%d%s.psf" % (W, H, suffix)))
     write_alias_map(amap, os.path.join(outdir, "pua.sed"))
     print("已写出 %s（%d 条映射）" % (os.path.join(outdir, "pua.sed"), len(amap)))
+    if map_json:
+        # 给 mido_ui.py 用的同一份映射（Python 侧直接把汉字换成 PUA 码点）。
+        # 用 ensure_ascii=False + UTF-8：装到设备后 os 直接读，不做转义。
+        with open(map_json, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({ch: chr(cp) for ch, cp in sorted(amap.items(), key=lambda kv: kv[1])},
+                      fh, ensure_ascii=False)
+        print("已写出 %s（%d 条映射，供设置页使用）" % (map_json, len(amap)))
 
     # ⚠ 硬自查：缺字时内核会静默回退成别的字形（─ 变 -、● 变 *），
     #   不查的话很难发现。有缺失就直接失败，别把坏字体部署上去。

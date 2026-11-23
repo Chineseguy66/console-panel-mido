@@ -9,7 +9,10 @@
     out_font/pua.sed                     -> /usr/local/share/consolefonts/
     out_font/Uni2-mido40x30.psf.gz        -> /usr/share/consolefonts/
     out_font/battery-panel.run.sh        -> /usr/local/bin/battery-panel.sh      (预编译版，systemd 实际跑的)
-    battery-panel.sh                     -> /usr/local/bin/battery-panel.src.sh  (可读源码版)
+    <源码>                                -> /usr/local/bin/battery-panel.src.sh  (可读源码版)
+
+源码文件名：仓库里叫 battery-panel.src.sh，开发目录里叫 battery-panel.sh，
+这里两个都找，谁存在推谁 —— 之前写死 battery-panel.sh，在仓库里跑必然报文件不存在。
 """
 import io
 import os
@@ -29,12 +32,18 @@ PORT = 22
 USER = "root"
 PASS = os.environ.get("MIDO_PASS", "")
 
+# 面板源码：两个候选名都认
+SRC_CANDIDATES = ("battery-panel.src.sh", "battery-panel.sh")
+SRC = next((p for p in SRC_CANDIDATES if os.path.exists(p)), None)
+if SRC is None:
+    raise SystemExit("✗ 找不到面板源码（battery-panel.src.sh / battery-panel.sh）")
+
 FILES = [
     ("out_font/mido-30x40.psf", "/usr/local/share/consolefonts/mido-30x40.psf", 0o644),
     ("out_font/pua.sed", "/usr/local/share/consolefonts/pua.sed", 0o644),
     ("out_font/Uni2-mido40x30.psf.gz", "/usr/share/consolefonts/Uni2-mido40x30.psf.gz", 0o644),
     ("out_font/battery-panel.run.sh", "/usr/local/bin/battery-panel.sh", 0o755),
-    ("battery-panel.sh", "/usr/local/bin/battery-panel.src.sh", 0o755),
+    (SRC, "/usr/local/bin/battery-panel.src.sh", 0o755),
 ]
 
 STAMP = time.strftime("%Y%m%d-%H%M%S")
